@@ -111,12 +111,12 @@ def go(options):
         np.random.seed(options.seed)
 
     if options.task == 'wikisimple':
-
+        print("wikisimple task")
         data = \
             util.load_words_split_types(util.DIR + '/datasets/wikisimple.txt', vocab_size=options.top_words, limit=options.limit)
 
     elif options.task == 'file':
-
+        print("file task")
         data = \
             util.load_words_split_types(options.data_dir, vocab_size=options.top_words, limit=options.limit)
 
@@ -184,8 +184,8 @@ def go(options):
     decoder_lstm_test = LSTM(options.lstm_capacity, return_sequences=True)
 
     h_train = decoder_lstm_train(embedded_train)
-    h_valid = decoder_lstm_valid(embedded_valid)
-    h_test = decoder_lstm_test(embedded_test)
+    # h_valid = decoder_lstm_valid(embedded_valid)
+    # h_test = decoder_lstm_test(embedded_test)
 
     if options.extra is not None:
         for _ in range(options.extra):
@@ -194,27 +194,27 @@ def go(options):
             h_test = LSTM(options.lstm_capacity, return_sequences=True)(h_test)
 
     fromhidden_train = Dense(numwords_train, activation='linear')
-    fromhidden_valid = Dense(numwords_valid, activation='linear')
-    fromhidden_test = Dense(numwords_test, activation='linear')
+    # fromhidden_valid = Dense(numwords_valid, activation='linear')
+    # fromhidden_test = Dense(numwords_test, activation='linear')
 
     out_train = TimeDistributed(fromhidden_train)(h_train)
-    out_valid = TimeDistributed(fromhidden_valid)(h_valid)
-    out_test = TimeDistributed(fromhidden_test)(h_test)
+    # out_valid = TimeDistributed(fromhidden_valid)(h_valid)
+    # out_test = TimeDistributed(fromhidden_test)(h_test)
 
     model_train = Model(input_train, out_train)
-    model_valid = Model(input_valid, out_valid)
-    model_test = Model(input_test, out_test)
+    # model_valid = Model(input_valid, out_valid)
+    # model_test = Model(input_test, out_test)
 
     opt = keras.optimizers.Adam(lr=options.lr)
     lss = words.sparse_loss
 
     model_train.compile(opt, lss)
-    model_valid.compile(opt, lss)
-    model_test.compile(opt, lss)
+    # model_valid.compile(opt, lss)
+    # model_test.compile(opt, lss)
 
     model_train.summary()
-    model_valid.summary()
-    model_test.summary()
+    # model_valid.summary()
+    # model_test.summary()
 
     ## Training
 
@@ -223,29 +223,67 @@ def go(options):
 
     epoch = 0
     instances_seen = 0
+
+    # fit network
+    # for i in range(options.epochs):
+    #     for batch_train in x_train:
+    #         n_train, l = batch_train.shape
+    #         batch_shifted_train = np.concatenate([np.ones((n_train, 1)), batch_train], axis=1)  # prepend start symbol
+    #         batch_out_train = np.concatenate([batch_train, np.zeros((n_train, 1))], axis=1)  # append pad symbol
+    #
+    #         # n_valid, l = x_valid[0].shape
+    #         # batch_shifted_valid = np.concatenate([np.ones((n_valid, 1)), x_valid], axis=1)  # prepend start symbol
+    #         # batch_out_valid = np.concatenate([x_valid, np.zeros((n_valid, 1))], axis=1)  # append pad symbol
+    #         #
+    #         # n_test, l = x_test[0].shape
+    #         # batch_shifted_test = np.concatenate([np.ones((n_test, 1)), x_test], axis=1)  # prepend start symbol
+    #         # batch_out_test = np.concatenate([x_test, np.zeros((n_test, 1))], axis=1)  # append pad symbol
+    #         print(x_valid)
+    #         for x_val
+    #         history = model_train.fit(batch_shifted_train, batch_out_train[:, :, None], epochs=1,
+    #                         batch_size=len(batch_shifted_train),
+    #                         validation_data=x_valid, verbose=1, shuffle=False)
+    #         model_train.test_on_batch(x_test, batch_out_train[:, :, None])
+    #         print(history.history) # print losses
+    #         model_train.reset_states()
+
+    for num_of_batch in range(len(x_valid)):
+        n_valid, l = (x_valid[num_of_batch]).shape
+        # print(f"n = {n} x_valid: {x_valid[num_of_batch]}")
+        batch_valid = np.concatenate([np.ones((n_valid, 1)), x_valid[num_of_batch]],
+                                             axis=1)  # prepend start symbol
+
+        batch_out_valid = np.concatenate([batch_valid, np.zeros((n_valid, 1))], axis=1)  # append pad symbol
+
+        n_test, l = x_test[num_of_batch].shape
+        batch_test = np.concatenate([np.ones((n_test, 1)), x_test[num_of_batch]],
+                                            axis=1)  # prepend start symbol
+        batch_out_test = np.concatenate([batch_test, np.zeros((n_test, 1))], axis=1)  # append pad symbol
+
+    print(f"len(batch_out_valid) = {len(batch_out_valid)}")
+    print(f"len(batch_out_test) = {len(batch_out_test)}")
+
     while epoch < options.epochs:
 
-        for batch_train, batch_valid, batch_test in tqdm([x_train, x_valid, x_test]):
-            n, l = batch.shape
+        for batch_train in tqdm(x_train):
+            n, l = batch_train.shape
 
+            # print(f"n = {n} batch_train {batch_train}")
             batch_shifted_train = np.concatenate([np.ones((n, 1)), batch_train], axis=1)  # prepend start symbol
             batch_out_train = np.concatenate([batch_train, np.zeros((n, 1))], axis=1)  # append pad symbol
 
-            batch_shifted_valid = np.concatenate([np.ones((n, 1)), batch_valid], axis=1)  # prepend start symbol
-            batch_out_valid = np.concatenate([batch_valid, np.zeros((n, 1))], axis=1)  # append pad symbol
 
-            batch_shifted_test = np.concatenate([np.ones((n, 1)), batch_test], axis=1)  # prepend start symbol
-            batch_out_test = np.concatenate([batch_test, np.zeros((n, 1))], axis=1)  # append pad symbol
-
+            # print(f"batch_shifted_valid: {batch_shifted_valid}")
+            # print(f"batch_shifted_test: {batch_shifted_test}")
             loss_train = model_train.train_on_batch(batch_shifted_train, batch_out_train[:, :, None])
-            #loss_valid = model_train.test_on_batch() # TODO
             #loss_test = model_train.get_losses_for(x_test)
             instances_seen += n
-            tbw.add_scalar('lm/batch-loss', float(loss), instances_seen)
-
+            # tbw.add_scalar('lm/batch-loss', float(loss), instances_seen)
+        loss_valid = model_train.test_on_batch(batch_valid, batch_out_valid[:, :, None])
+        loss_test = model_train.test_on_batch(batch_test, batch_out_test[:, :, None])  # TODO
         epoch += 1
 
-        loss_train = loss
+        # loss_train = loss
 
 
 
