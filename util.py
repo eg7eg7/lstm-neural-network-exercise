@@ -20,10 +20,70 @@ Various utility functions for loading data and performing other common operation
 Some of this code is based on Based on https://github.com/ChunML/seq2seq/blob/master/seq2seq_utils.py
 """
 
-
 # Special tokens
 EXTRA_SYMBOLS = ['<PAD>', '<START>', '<UNK>', '<EOS>']
 DIR = os.path.dirname(os.path.realpath(__file__))
+
+
+def get_w2i_i2w(x, vocab_size):
+    # Creating the vocabulary set with the most common words (leaving room for PAD, START, UNK)
+    dist = FreqDist(np.hstack(x))
+    x_vocab = dist.most_common(vocab_size - len(EXTRA_SYMBOLS))
+
+    # Creating an array of words from the vocabulary set, we will use this array as index-to-word dictionary
+    i2w = [word[0] for word in x_vocab]
+    # Adding the word "ZERO" to the beginning of the array
+    i2w = EXTRA_SYMBOLS + i2w
+
+    # Creating the word-to-index dictionary from the array created above
+    w2i = {word: ix for ix, word in enumerate(i2w)}
+
+    # Converting each word to its index value
+    for i, sentence in enumerate(x):
+        for j, word in enumerate(sentence):
+            if word in w2i:
+                x[i][j] = w2i[word]
+            else:
+                x[i][j] = w2i['<UNK>']
+    return [x, w2i, i2w]
+
+
+def load_words_split_types(source, vocab_size=10000, limit=None, max_length=None, train_percent=0.8,
+                           validation_percent=0.1, test_percent=0.1):
+    sum_perc = train_percent + validation_percent + test_percent
+    if abs(1.0 - sum_perc) > 1e-9:
+        exception_str = "Error loading words - percentage don't sum to 100% (received value " + str(sum_perc) + ")"
+        raise Exception(exception_str)
+
+    # Reading raw text from source and destination files
+    f = open(source, 'r')
+    x_data = f.read()
+    f.close()
+
+    print('raw data read')
+
+    if limit is not None:
+        x_data = x_data[:limit]
+
+    # Splitting raw text into array of sequences
+    x = [text_to_word_sequence(x) for x in x_data.split('\n') if len(x) > 0]
+
+    if max_length is not None:
+        x = [s for s in x if len(s) <= max_length]
+
+    split_data = {}
+    train_x = get_sub_list(x, 0, train_percent)
+    valid_x = get_sub_list(x, train_percent, train_percent + validation_percent)
+    test_x = get_sub_list(x, train_percent + validation_percent, 1.0)
+    split_data['train'] = get_w2i_i2w(train_x, vocab_size=vocab_size)
+    split_data['validation'] = get_w2i_i2w(valid_x, vocab_size=vocab_size)
+    split_data['test'] = get_w2i_i2w(test_x, vocab_size=vocab_size)
+    return split_data
+
+
+def get_sub_list(li, from_percent=0, to_percent=1.0):
+    return li[int(len(li) * from_percent): int(len(li) * to_percent)]
+
 
 def load_words(source, vocab_size=10000, limit=None, max_length=None):
     """
@@ -66,7 +126,7 @@ def load_words(source, vocab_size=10000, limit=None, max_length=None):
     i2w = EXTRA_SYMBOLS + i2w
 
     # Creating the word-to-index dictionary from the array created above
-    w2i = {word:ix for ix, word in enumerate(i2w)}
+    w2i = {word: ix for ix, word in enumerate(i2w)}
 
     # Converting each word to its index value
     for i, sentence in enumerate(x):
@@ -78,7 +138,8 @@ def load_words(source, vocab_size=10000, limit=None, max_length=None):
 
     return x, w2i, i2w
 
-def load_characters(source, length=None, limit=None,):
+
+def load_characters(source, length=None, limit=None, ):
     """
     Reads a text file as a stream of characters. The stream is cut into chunks of equal size
 
@@ -117,7 +178,7 @@ def load_characters(source, length=None, limit=None,):
     i2c = EXTRA_SYMBOLS + i2c
 
     # Creating the word-to-index dictionary from the array created above
-    c2i = {word:ix for ix, word in enumerate(i2c)}
+    c2i = {word: ix for ix, word in enumerate(i2c)}
 
     # Converting each word to its index value
     for i, sentence in enumerate(x):
@@ -128,6 +189,7 @@ def load_characters(source, length=None, limit=None,):
                 x[i][j] = c2i['<UNK>']
 
     return x, c2i, i2c
+
 
 def process_data(word_sentences, max_len, word_to_ix):
     # Vectorizing each element in each sequence
@@ -147,11 +209,11 @@ def batch_pad(x, batch_size, min_length=3, add_eos=False, extra_padding=0):
     :return: A list of tensors containing equal-length sequences padded to the length of the longest sequence in the batch
     """
 
-    x = sorted(x, key=lambda l : len(l))
+    x = sorted(x, key=lambda l: len(l))
 
     if add_eos:
         eos = EXTRA_SYMBOLS.index('<EOS>')
-        x = [sent + [eos,] for sent in x]
+        x = [sent + [eos, ] for sent in x]
 
     batches = []
 
@@ -172,9 +234,9 @@ def batch_pad(x, batch_size, min_length=3, add_eos=False, extra_padding=0):
 
         start += batch_size
 
-
     print('max length per batch: ', [max([len(l) for l in batch]) for batch in batches])
     return batches
+
 
 def to_categorical(batch, num_classes):
     """
@@ -194,10 +256,12 @@ def to_categorical(batch, num_classes):
 
     return out
 
+
 def chunks(l, n):
     """Yield successive n-sized chunks from l."""
     for i in range(0, len(l), n):
         yield l[i:i + n]
+
 
 def sample(preds, temperature=1.0):
     """
@@ -222,6 +286,7 @@ def sample(preds, temperature=1.0):
 
     return np.argmax(probas)
 
+
 def sample_logits(preds, temperature=1.0):
     """
     Sample an index from a logit vector.
@@ -242,8 +307,8 @@ def sample_logits(preds, temperature=1.0):
 
     return choice
 
-class KLLayer(Layer):
 
+class KLLayer(Layer):
     """
     Identity transform layer that adds KL divergence
     to the final model loss.
@@ -256,7 +321,7 @@ class KLLayer(Layer):
     http://tiao.io/posts/implementing-variational-autoencoders-in-keras-beyond-the-quickstart-tutorial/
     """
 
-    def __init__(self, weight = None, *args, **kwargs):
+    def __init__(self, weight=None, *args, **kwargs):
         self.is_placeholder = True
         self.weight = weight
         super().__init__(*args, **kwargs)
@@ -268,7 +333,7 @@ class KLLayer(Layer):
                                 K.square(mu) -
                                 K.exp(log_var), axis=-1)
 
-        loss =  K.mean(kl_batch)
+        loss = K.mean(kl_batch)
         if self.weight is not None:
             loss = loss * self.weight
 
@@ -276,16 +341,17 @@ class KLLayer(Layer):
 
         return inputs
 
+
 class Sample(Layer):
     """
     Performs sampling step
     """
+
     def __init__(self, *args, **kwargs):
         self.is_placeholder = True
         super().__init__(*args, **kwargs)
 
     def call(self, inputs):
-
         mu, log_var, eps = inputs
 
         z = K.exp(.5 * log_var) * eps + mu
@@ -296,11 +362,11 @@ class Sample(Layer):
         shape_mu, _, _ = input_shape
         return shape_mu
 
-def interpolate(start, end, steps):
 
-    result = np.zeros((steps+2, start.shape[0]))
-    for i, d in enumerate(np.linspace(0,1, steps+2)):
-        result[i, :] = start * (1-d) + end * d
+def interpolate(start, end, steps):
+    result = np.zeros((steps + 2, start.shape[0]))
+    for i, d in enumerate(np.linspace(0, 1, steps + 2)):
+        result[i, :] = start * (1 - d) + end * d
 
     return result
 
@@ -314,9 +380,9 @@ class OrderedCounter(Counter, OrderedDict):
     def __reduce__(self):
         return self.__class__, (OrderedDict(self),)
 
-def idx2word(idx, i2w, pad_idx):
 
-    sent_str = [str()]*len(idx)
+def idx2word(idx, i2w, pad_idx):
+    sent_str = [str()] * len(idx)
 
     for i, sent in enumerate(idx):
 
@@ -327,6 +393,5 @@ def idx2word(idx, i2w, pad_idx):
             sent_str[i] += i2w[str(word_id.item())] + " "
 
         sent_str[i] = sent_str[i].strip()
-
 
     return sent_str

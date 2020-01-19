@@ -243,4 +243,5 @@ if __name__ == "__main__":
 
     print('OPTIONS', options)
 
+    print("----------------------BEGIN----------------------")
     go(options)
