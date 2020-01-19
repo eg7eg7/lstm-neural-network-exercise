@@ -2,7 +2,7 @@ import keras
 
 import keras.backend as K
 from keras.datasets import imdb
-from keras.layers import  LSTM, Embedding, TimeDistributed, Input, Dense
+from keras.layers import LSTM, Embedding, TimeDistributed, Input, Dense
 from keras.models import Model
 from tensorflow.python.client import device_lib
 
@@ -19,10 +19,11 @@ import util
 
 CHECK = 5
 
-def generate_seq(model : Model, seed, size, temperature=1.0):
+
+def generate_seq(model: Model, seed, size, temperature=1.0):
     """
     :param model: The complete RNN language model
-    :param seed: The first few wordas of the sequence to start generating from
+    :param seed: The first few words of the sequence to start generating from
     :param size: The total size of the sequence to generate
     :param temperature: This controls how much we follow the probabilities provided by the network. For t=1.0 we just
         sample directly according to the probabilities. Lower temperatures make the high-probability words more likely
@@ -40,21 +41,21 @@ def generate_seq(model : Model, seed, size, temperature=1.0):
     tokens = np.concatenate([seed, np.zeros(size - ls)])
 
     for i in range(ls, size):
-
-        probs = model.predict(tokens[None,:])
+        probs = model.predict(tokens[None, :])
 
         # Extract the i-th probability vector and sample an index from it
-        next_token = util.sample_logits(probs[0, i-1, :], temperature=temperature)
+        next_token = util.sample_logits(probs[0, i - 1, :], temperature=temperature)
 
         tokens[i] = next_token
 
     return [int(t) for t in tokens]
 
+
 def sparse_loss(y_true, y_pred):
     return K.sparse_categorical_crossentropy(y_true, y_pred, from_logits=True)
 
-def go(options):
 
+def go(options):
     tbw = SummaryWriter(log_dir=options.tb_dir)
 
     if options.seed < 0:
@@ -102,7 +103,7 @@ def go(options):
 
     ## Define model
 
-    input = Input(shape=(None, ))
+    input = Input(shape=(None,))
     embedding = Embedding(numwords, options.lstm_capacity, input_length=None)
 
     embedded = embedding(input)
@@ -127,7 +128,7 @@ def go(options):
 
     ## Training
 
-    #- Since we have a variable batch size, we make our own training loop, and train with
+    # - Since we have a variable batch size, we make our own training loop, and train with
     #  model.train_on_batch(...). It's a little more verbose, but it gives us more control.
 
     epoch = 0
@@ -138,7 +139,7 @@ def go(options):
             n, l = batch.shape
 
             batch_shifted = np.concatenate([np.ones((n, 1)), batch], axis=1)  # prepend start symbol
-            batch_out = np.concatenate([batch, np.zeros((n, 1))], axis=1)     # append pad symbol
+            batch_out = np.concatenate([batch, np.zeros((n, 1))], axis=1)  # append pad symbol
 
             loss = model.train_on_batch(batch_shifted, batch_out[:, :, None])
 
@@ -154,17 +155,17 @@ def go(options):
                 b = random.choice(x)
 
                 if b.shape[1] > 20:
-                    seed = b[0,:20]
+                    seed = b[0, :20]
                 else:
                     seed = b[0, :]
 
                 seed = np.insert(seed, 0, 1)
-                gen = generate_seq(model, seed,  60, temperature=temp)
+                gen = generate_seq(model, seed, 60, temperature=temp)
 
                 print('*** [', decode(seed), '] ', decode(gen[len(seed):]))
 
-if __name__ == "__main__":
 
+if __name__ == "__main__":
     ## Parse the command line options
     parser = ArgumentParser()
 

@@ -8,7 +8,7 @@ import numpy as np
 
 from keras.preprocessing import sequence
 
-from scipy.misc import logsumexp
+from scipy.special import logsumexp
 
 from collections import defaultdict, Counter, OrderedDict
 
