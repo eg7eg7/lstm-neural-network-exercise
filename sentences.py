@@ -37,6 +37,7 @@ def anneal(step, total, k = 1.0, anneal_function='linear'):
     elif anneal_function == 'linear':
        return min(1, step/(total/2))
 
+
 def generate_seq(
         model : Model, z,
         size = 60,
@@ -83,6 +84,7 @@ def generate_seq(
 def sparse_loss(y_true, y_pred):
     losses = K.sparse_categorical_crossentropy(y_true, y_pred, from_logits=True)
     return K.sum(losses, axis=-1) # Note the sum over timesteps. This is crucial for the VAE
+
 
 def go(options):
 

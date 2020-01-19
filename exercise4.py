@@ -92,14 +92,29 @@ def create_parser():
     return parser
 
 
-def main():
-    parser = create_parser()
-    options = parser.parse_args()
+def go(options):
+    tbw = SummaryWriter(log_dir=options.tb_dir)
+
+    if options.seed < 0:
+        seed = random.randint(0, 1000000)
+        print('random seed: ', seed)
+        np.random.seed(seed)
+    else:
+        np.random.seed(options.seed)
+
+
     split_data = util.load_words_split_types(util.DIR + '/datasets/wikisimple.txt', vocab_size=options.top_words, limit=options.limit)
     train = split_data["train"]  # [data, w2i, i2w]
     valid = split_data["validation"]  # [data, w2i, i2w]
     test = split_data["test"]  # [data, w2i, i2w]
-    print(split_data)
+
+
+def main():
+    parser = create_parser()
+    options = parser.parse_args()
+    go(options)
+
+
 
 
 if __name__ == "__main__":

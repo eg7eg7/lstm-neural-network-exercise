@@ -56,7 +56,7 @@ def load_words_split_types(source, vocab_size=10000, limit=None, max_length=None
         raise Exception(exception_str)
 
     # Reading raw text from source and destination files
-    f = open(source, 'r')
+    f = open(source, 'r', encoding='utf8')
     x_data = f.read()
     f.close()
 
@@ -101,7 +101,7 @@ def load_words(source, vocab_size=10000, limit=None, max_length=None):
     """
 
     # Reading raw text from source and destination files
-    f = open(source, 'r')
+    f = open(source, 'r', encoding='utf8')
     x_data = f.read()
     f.close()
 
@@ -151,7 +151,7 @@ def load_characters(source, length=None, limit=None, ):
     """
 
     # Reading raw text from source and destination files
-    f = open(source, 'r')
+    f = open(source, 'r', encoding='utf8')
     x_data = f.read()
     f.close()
 
