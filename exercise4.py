@@ -95,10 +95,9 @@ def create_parser():
     return parser
 
 
-def get_perplexity(y_true, y_pred):
-    cross_entropy = words.sparse_loss(y_true, y_pred)
-    perplexity = K.exp(cross_entropy)
-    return perplexity
+def get_perplexity(loss):
+    return 2**loss
+
 
 def go(options):
     tbw = SummaryWriter(log_dir=options.tb_dir)
@@ -113,7 +112,8 @@ def go(options):
     if options.task == 'wikisimple':
         print("wikisimple task")
         data = \
-            util.load_words_split_types(util.DIR + '/datasets/wikisimple.txt', vocab_size=options.top_words, limit=options.limit)
+            util.load_words_split_types(util.DIR + '/datasets/wikisimple.txt', vocab_size=options.top_words,
+                                        limit=options.limit)
 
     elif options.task == 'file':
         print("file task")
@@ -168,53 +168,31 @@ def go(options):
     ## Define model
 
     input_train = Input(shape=(None,))
-    input_valid = Input(shape=(None,))
-    input_test = Input(shape=(None,))
 
     embedding_train = Embedding(numwords_train, options.lstm_capacity, input_length=None)
-    embedding_valid = Embedding(numwords_valid, options.lstm_capacity, input_length=None)
-    embedding_test = Embedding(numwords_test, options.lstm_capacity, input_length=None)
 
     embedded_train = embedding_train(input_train)
-    embedded_valid = embedding_valid(input_valid)
-    embedded_test = embedding_test(input_test)
 
     decoder_lstm_train = LSTM(options.lstm_capacity, return_sequences=True)
-    decoder_lstm_valid = LSTM(options.lstm_capacity, return_sequences=True)
-    decoder_lstm_test = LSTM(options.lstm_capacity, return_sequences=True)
 
     h_train = decoder_lstm_train(embedded_train)
-    # h_valid = decoder_lstm_valid(embedded_valid)
-    # h_test = decoder_lstm_test(embedded_test)
 
     if options.extra is not None:
         for _ in range(options.extra):
             h_train = LSTM(options.lstm_capacity, return_sequences=True)(h_train)
-            h_valid = LSTM(options.lstm_capacity, return_sequences=True)(h_valid)
-            h_test = LSTM(options.lstm_capacity, return_sequences=True)(h_test)
 
     fromhidden_train = Dense(numwords_train, activation='linear')
-    # fromhidden_valid = Dense(numwords_valid, activation='linear')
-    # fromhidden_test = Dense(numwords_test, activation='linear')
 
     out_train = TimeDistributed(fromhidden_train)(h_train)
-    # out_valid = TimeDistributed(fromhidden_valid)(h_valid)
-    # out_test = TimeDistributed(fromhidden_test)(h_test)
 
     model_train = Model(input_train, out_train)
-    # model_valid = Model(input_valid, out_valid)
-    # model_test = Model(input_test, out_test)
 
     opt = keras.optimizers.Adam(lr=options.lr)
     lss = words.sparse_loss
 
     model_train.compile(opt, lss)
-    # model_valid.compile(opt, lss)
-    # model_test.compile(opt, lss)
 
     model_train.summary()
-    # model_valid.summary()
-    # model_test.summary()
 
     ## Training
 
@@ -224,72 +202,29 @@ def go(options):
     epoch = 0
     instances_seen = 0
 
-    # fit network
-    # for i in range(options.epochs):
-    #     for batch_train in x_train:
-    #         n_train, l = batch_train.shape
-    #         batch_shifted_train = np.concatenate([np.ones((n_train, 1)), batch_train], axis=1)  # prepend start symbol
-    #         batch_out_train = np.concatenate([batch_train, np.zeros((n_train, 1))], axis=1)  # append pad symbol
-    #
-    #         # n_valid, l = x_valid[0].shape
-    #         # batch_shifted_valid = np.concatenate([np.ones((n_valid, 1)), x_valid], axis=1)  # prepend start symbol
-    #         # batch_out_valid = np.concatenate([x_valid, np.zeros((n_valid, 1))], axis=1)  # append pad symbol
-    #         #
-    #         # n_test, l = x_test[0].shape
-    #         # batch_shifted_test = np.concatenate([np.ones((n_test, 1)), x_test], axis=1)  # prepend start symbol
-    #         # batch_out_test = np.concatenate([x_test, np.zeros((n_test, 1))], axis=1)  # append pad symbol
-    #         print(x_valid)
-    #         for x_val
-    #         history = model_train.fit(batch_shifted_train, batch_out_train[:, :, None], epochs=1,
-    #                         batch_size=len(batch_shifted_train),
-    #                         validation_data=x_valid, verbose=1, shuffle=False)
-    #         model_train.test_on_batch(x_test, batch_out_train[:, :, None])
-    #         print(history.history) # print losses
-    #         model_train.reset_states()
-
-    for num_of_batch in range(len(x_valid)):
-        n_valid, l = (x_valid[num_of_batch]).shape
-        # print(f"n = {n} x_valid: {x_valid[num_of_batch]}")
-        batch_valid = np.concatenate([np.ones((n_valid, 1)), x_valid[num_of_batch]],
-                                             axis=1)  # prepend start symbol
-
-        batch_out_valid = np.concatenate([batch_valid, np.zeros((n_valid, 1))], axis=1)  # append pad symbol
-
-        n_test, l = x_test[num_of_batch].shape
-        batch_test = np.concatenate([np.ones((n_test, 1)), x_test[num_of_batch]],
-                                            axis=1)  # prepend start symbol
-        batch_out_test = np.concatenate([batch_test, np.zeros((n_test, 1))], axis=1)  # append pad symbol
-
-    print(f"len(batch_out_valid) = {len(batch_out_valid)}")
-    print(f"len(batch_out_test) = {len(batch_out_test)}")
-
     while epoch < options.epochs:
 
         for batch_train in tqdm(x_train):
-            n, l = batch_train.shape
+            n_train, l_train = batch_train.shape
 
             # print(f"n = {n} batch_train {batch_train}")
-            batch_shifted_train = np.concatenate([np.ones((n, 1)), batch_train], axis=1)  # prepend start symbol
-            batch_out_train = np.concatenate([batch_train, np.zeros((n, 1))], axis=1)  # append pad symbol
+            batch_shifted_train = np.concatenate([np.ones((n_train, 1)), batch_train], axis=1)  # prepend start symbol
+            batch_out_train = np.concatenate([batch_train, np.zeros((n_train, 1))], axis=1)  # append pad symbol
 
-
-            # print(f"batch_shifted_valid: {batch_shifted_valid}")
-            # print(f"batch_shifted_test: {batch_shifted_test}")
             loss_train = model_train.train_on_batch(batch_shifted_train, batch_out_train[:, :, None])
-            #loss_test = model_train.get_losses_for(x_test)
-            instances_seen += n
+
+            instances_seen += n_train
             # tbw.add_scalar('lm/batch-loss', float(loss), instances_seen)
-        loss_valid = model_train.test_on_batch(batch_valid, batch_out_valid[:, :, None])
-        loss_test = model_train.test_on_batch(batch_test, batch_out_test[:, :, None])  # TODO
+        loss_train, perplexity_train = get_loss(model_train, x_train)
+        loss_valid, perplexity_valid = get_loss(model_train, x_valid)
+        loss_test, perplexity_test = get_loss(model_train, x_test)
+
         epoch += 1
 
-        # loss_train = loss
+        print(f'Train - Loss = {loss_train}, Perplexity = {perplexity_train}')
+        print(f'Valid - Loss = {loss_valid}, Perplexity = {perplexity_valid}')
+        print(f'Test - Loss = {loss_test}, Perplexity = {perplexity_test}')
 
-
-
-        print("Loss train ", loss_train)
-        print("Loss valid ", loss_valid)
-        print("Loss test ", loss_test)
         # Show samples for some sentences from random batches
         for temp in [0.0, 0.9, 1, 1.1, 1.2]:
             print('### TEMP ', temp)
@@ -307,6 +242,23 @@ def go(options):
                 print('*** [', decode_train(seed), '] ', decode_train(gen[len(seed):]))
 
 
+def get_loss(model, x):
+    loss = 0.0
+    n = 0
+    print("Calculating loss")
+    for batch_train in x:
+        n_train, l_train = batch_train.shape
+        batch_shifted_train = np.concatenate([np.ones((n_train, 1)), batch_train], axis=1)  # prepend start symbol
+        batch_out_train = np.concatenate([batch_train, np.zeros((n_train, 1))], axis=1)  # append pad symbol
+        loss_train = model.test_on_batch(batch_shifted_train, batch_out_train[:, :, None])
+
+        loss += loss_train
+        n += 1
+    loss = (loss / n)
+    perplexity = get_perplexity(loss)
+    return loss, perplexity
+
+
 def main():
     parser = create_parser()
     options = parser.parse_args()
@@ -315,5 +267,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
