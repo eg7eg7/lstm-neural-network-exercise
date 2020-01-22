@@ -16,6 +16,7 @@ from tensorboardX import SummaryWriter
 import math
 import util
 import words
+
 # TODO refactor (ctrl+alt+shift+L)
 
 CHECK = 6
@@ -24,6 +25,7 @@ options = None
 model_list = []
 reverse_param_list = []
 hidden_layer_param_list = []
+
 
 def create_parser():
     ## Parse the command line options
@@ -148,24 +150,46 @@ def load_data(task='wikisimple', data_dir=None, limit=None, top_words=1000, batc
 
 
 def get_sentence_probability(model, sentence):
-        return model.predict(sentence)
+    return model.predict(sentence)
 
-def generate_sentences(model, w2i, sentence_beginning="I love", sentence_length = 7,  temperatures=[0.1, 1, 10]):
+
+def generate_sentences(model, w2i, sentence_beginning="I love", sentence_length=7, temperatures=[0.1, 1, 10]):
     sentence_to_feed, generated_sentences = [], []
     for word in sentence_beginning.split():
         sentence_to_feed.append(w2i[word])
 
     for temperature in temperatures:
         print(f'Temperature = {temperature}')
-        generated_sentences.append(words.generate_seq(model, sentence_to_feed, size=sentence_length, temperature=temperature))
+        generated_sentences.append(
+            words.generate_seq(model, sentence_to_feed, size=sentence_length, temperature=temperature))
+
+
+def generate_words(size=60, temp=None, initial_sentence="I love"):
+    if temp is None:
+        temp = 1.0
+    for i in range(CHECK):
+        b = random.choice(x_test)
+
+        if b.shape[1] > 20:
+            seed = b[0, :20]
+        else:
+            seed = b[0, :]
+
+        seed = np.insert(seed, 0, 1)
+        gen = words.generate_seq(self.model, seed, size, temperature=temp)
+
+        return '*** [', decode_train(seed), '] ', decode_train(gen[len(seed):])
+
 
 def decode(seq, i2w):
     return ' '.join(i2w[id] for id in seq)
 
+
 def get_perplexity(loss):
     return math.exp(loss)
 
-def get_new_model(lr, i2w_train, lstm_capacity=1000, extra_layers = None , is_reverse = False):
+
+def get_new_model(lr, i2w_train, lstm_capacity=1000, extra_layers=None, is_reverse=False):
     numwords_train = len(i2w_train)
     input_train = Input(shape=(None,))
 
@@ -197,7 +221,8 @@ def create_models(train_list):
     models = []
     for num_hidden in [1, 2]:
         for is_reverse in [False, True]:
-            model = get_new_model(lr=options.lr, i2w_train = train_list[2], lstm_capacity=options.lstm_capacity, extra_layers=num_hidden,is_reverse=is_reverse)
+            model = get_new_model(lr=options.lr, i2w_train=train_list[2], lstm_capacity=options.lstm_capacity,
+                                  extra_layers=num_hidden, is_reverse=is_reverse)
             models.append(model)
             reverse_param_list.append(is_reverse)
             hidden_layer_param_list.append(num_hidden)
@@ -226,7 +251,7 @@ def get_loss(model, x):
     loss = 0.0
     n = 0
 
-    for batch_train in tqdm(x):
+    for batch_train in tqdm(x, position=0):
         n_train, l_train = batch_train.shape
         batch_shifted_train = np.concatenate([np.ones((n_train, 1)), batch_train], axis=1)  # prepend start symbol
         batch_out_train = np.concatenate([batch_train, np.zeros((n_train, 1))], axis=1)  # append pad symbol
@@ -241,18 +266,23 @@ def get_loss(model, x):
 
 def train_all_models_and_print_loss_perplexity(models, train_list, valid_list, test_list):
     trained_models = []
-    for index, model in tqdm(enumerate(models), total=len(models)):
+    for index, model in tqdm(enumerate(models), total=len(models), position=0):
         print(f'')
-        model = train_model(train_list, model, options.epochs)
+        model = train_model(train_list, model, 1)
         trained_models.append(model)
         loss_train, perplexity_train = get_loss(model, train_list[0])
         loss_valid, perplexity_valid = get_loss(model, valid_list[0])
         loss_test, perplexity_test = get_loss(model, test_list[0])
-        print(f'number epochs = {options.epochs}, reverse_lstm = {reverse_param_list[index]}, hidden_layers = {hidden_layer_param_list[index]}')
+
+        print(
+            f'number epochs = {options.epochs}, reverse_lstm = {reverse_param_list[index]}, hidden_layers = {hidden_layer_param_list[index]}')
         print(f'Train - Loss = {loss_train}, Perplexity = {perplexity_train}')
         print(f'Valid - Loss = {loss_valid}, Perplexity = {perplexity_valid}')
         print(f'Test - Loss = {loss_test}, Perplexity = {perplexity_test}')
+        break
+        # TODO remove break
     return trained_models
+
 
 # TODO global other params
 
@@ -262,15 +292,17 @@ def main():
     options = parser.parse_args()
     logging.debug("options parsing performed")
     print(options)
-    train_list, validation_list, test_list = load_data(task=options.task, data_dir=options.data,limit=options.limit, top_words=options.top_words, batch_size=options.batch)
+    train_list, validation_list, test_list = load_data(task=options.task, data_dir=options.data, limit=options.limit,
+                                                       top_words=options.top_words, batch_size=options.batch)
     logging.debug("load_data performed")
     # train_list = [x_train, w2i_train, i2w_train], validation_list = [x_valid, w2i_valid, i2w_valid] test_list = [x_test, w2i_test, i2w_test]
     models = create_models(train_list)
     logging.debug("create_models performed")
-    models = train_all_models_and_print_loss_perplexity(models, train_list, validation_list, test_list)
-    generate_sentences(models[0], w2i=train_list[1])
-    # def generate_sentences(model, w2i, sentence_beginning="I love", sentence_length=7, temperatures=[0.1, 1, 10]):
-
+    for epoch in range(options.epochs):
+        models = train_all_models_and_print_loss_perplexity(models, train_list, validation_list, test_list)
+        words.generate_seq(model=models[0], seed=["I love you"], size=7, temperature=1.0)
+        # generate_sentences(models[0], w2i=train_list[1])
+        # def generate_sentences(model, w2i, sentence_beginning="I love", sentence_length=7, temperatures=[0.1, 1, 10]):
 
 
 if __name__ == "__main__":
