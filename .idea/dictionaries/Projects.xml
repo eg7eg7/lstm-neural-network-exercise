@@ -2,6 +2,7 @@
   <dictionary name="Projects">
     <words>
       <w>datasets</w>
+      <w>filepath</w>
       <w>fromhidden</w>
       <w>lstm</w>
       <w>numwords</w>

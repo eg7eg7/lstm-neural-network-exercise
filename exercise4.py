@@ -9,16 +9,21 @@ from tensorflow.python.client import device_lib
 
 from tqdm import tqdm
 import os, random
-
-from argparse import ArgumentParser
-
+from argparse import ArgumentParser, Namespace
 import numpy as np
 
 from tensorboardX import SummaryWriter
 import math
 import util
 import words
+# TODO refactor (ctrl+alt+shift+L)
 
+CHECK = 6
+options = None
+
+model_list = []
+reverse_param_list = []
+hidden_layer_param_list = []
 
 def create_parser():
     ## Parse the command line options
@@ -96,282 +101,19 @@ def create_parser():
     return parser
 
 
-class LSTM_words:
-    def __init__(self, task, top_words=1000, limit=None, seed=-1, batch_size=128, data_dir=None, learning_rate=0.001,
-                 lstm_capacity=256, lstm_extra=None, epochs=100, temperature=1.0):
-        if seed < 0:
-            seed = random.randint(0, 1000000)
-            print('random seed: ', seed)
-        np.random.seed(seed)
-        self.input_train = None
-        self.out_train = None
-        self.opt = None
-        self.lss = None
-        self.embedding_train = None
-        self.embedded_train = None
-        self.decoder_lstm_train = None
-        self.fromhidden_train = None
-        self.h_train = None
-        self.temperature = temperature
-        self.top_words = top_words
-        self.check = 6
-        self.data = None
-        self.model = None
-        self.data_train = None
-        self.data_valid = None
-        self.data_test = None
-        self.epochs = epochs
-        self.lstm_capacity = lstm_capacity
-        self.lstm_extra = lstm_extra
-        self.batch_size = batch_size
-        self.numwords_train = 0
-        self.numwords_test = 0
-        self.numwords_valid = 0
-        self.learning_rate = learning_rate
-        self.x_train, self.w2i_train, self.i2w_train = None, None, None
-        self.x_valid, self.w2i_valid, self.i2w_valid = None, None, None
-        self.x_test, self.w2i_test, self.i2w_test = None, None, None
-        self.loss_train, self.perplexity_train = 0, 0
-        self.loss_valid, self.perplexity_valid = 0, 0
-        self.loss_test, self.perplexity_test = 0, 0
-        self.data_dir = data_dir
-        self.limit = limit
-        self.task = task
-        self.is_trained = False
-        self.is_initialized = False
-
-    def initialize(self):
-        self.load_data()
-        self.define_model()
-        self.is_trained = False
-        self.is_initialized = True
-        return self
-
-    def get_losses(self):
-        return self.loss_train, self.loss_valid, self.loss_test
-
-    def train(self):
-        if not self.is_initialized:
-            print(f'model is not initiated, model.initialize() before using train')
-            return
-        ## Training
-
-        # - Since we have a variable batch size, we make our own training loop, and train with
-        #  model.train_on_batch(...). It's a little more verbose, but it gives us more control.
-
-        epoch = 0
-        instances_seen = 0
-
-        while epoch < self.epochs:
-
-            for batch_train in self.x_train:
-                n_train, l_train = batch_train.shape
-                print("epoch", epoch)
-                batch_shifted_train = np.concatenate([np.ones((n_train, 1)), batch_train],
-                                                     axis=1)  # prepend start symbol
-                batch_out_train = np.concatenate([batch_train, np.zeros((n_train, 1))], axis=1)  # append pad symbol
-
-                self.model.train_on_batch(batch_shifted_train, batch_out_train[:, :, None])
-
-                instances_seen += n_train
-            epoch += 1
-        print("Calculating loss for training set")
-        self.loss_train, self.perplexity_train = LSTM_words.get_loss(self.model, self.x_train)
-        print("Calculating loss for validation set")
-        self.loss_valid, self.perplexity_valid = LSTM_words.get_loss(self.model, self.x_valid)
-        print("Calculating loss for test set")
-        self.loss_test, self.perplexity_test = LSTM_words.get_loss(self.model, self.x_test)
-        self.is_trained = True
-
-    def save_model(self, model, filepath):
-        model.save(filepath + ".hdf5")
-
-    def load_model(self, filepath):
-        model = load_model(filepath)
-        
-    def print_info(self):
-        if self.is_initialized:
-            self.model.summary()
-        else:
-            print(f'LSTM is not initialized - initialize first')
-        if self.is_trained:
-            print(f'Train - Loss = {self.loss_train}, Perplexity = {self.perplexity_train}')
-            print(f'Valid - Loss = {self.loss_valid}, Perplexity = {self.perplexity_valid}')
-            print(f'Test - Loss = {self.loss_test}, Perplexity = {self.perplexity_test}')
-        else:
-            print(f'Model is not trained - no data to show')
-
-    def get_sentence_probability(self, sentence):
-        if self.is_initialized:
-            return self.model.predict(sentence)
-        else:
-            print("No model error")
-            return 0
-
-    def generate_sentences(self, sentence_beginning="I love you", temperatures=[0.1, 1, 10]):
-        sentence_to_feed, generated_sentences = [], []
-        for word in sentence_beginning.split():
-            sentence_to_feed.append(self.w2i_test[word])
-        for temperature in temperatures:
-            generated_sentences.append(words.generate_seq(self.model, sentence_to_feed, 7, temperature))
-
-    def decode_train(self, seq):
-        return ' '.join(self.i2w_train[id] for id in seq)
-
-    def decode_valid(self, seq):
-        return ' '.join(self.i2w_valid[id] for id in seq)
-
-    def decode_test(self, seq):
-        return ' '.join(self.i2w_test[id] for id in seq)
-
-    def define_model(self):
-        ## Define model
-
-        self.input_train = Input(shape=(None,))
-
-        self.embedding_train = Embedding(self.numwords_train, self.lstm_capacity, input_length=None)
-
-        self.embedded_train = self.embedding_train(self.input_train)
-
-        self.decoder_lstm_train = LSTM(self.lstm_capacity, return_sequences=True)
-
-        self.h_train = self.decoder_lstm_train(self.embedded_train)
-
-        if self.lstm_extra is not None:
-            for _ in range(self.lstm_extra):
-                self.h_train = LSTM(self.lstm_capacity, return_sequences=True)(self.h_train)
-
-        self.fromhidden_train = Dense(self.numwords_train, activation='linear')
-
-        self.out_train = TimeDistributed(self.fromhidden_train)(self.h_train)
-
-        self.model = Model(self.input_train, self.out_train)
-        self.opt = keras.optimizers.Adam(lr=self.learning_rate)
-        self.lss = words.sparse_loss
-        self.model.compile(self.opt, self.lss)
-        self.model.summary()
-
-    def load_data(self):
-        if self.task == 'wikisimple':
-            print("wikisimple task")
-            self.data = \
-                util.load_words_split_types(util.DIR + '/datasets/wikisimple.txt', vocab_size=self.top_words,
-                                            limit=self.limit)
-
-        elif self.task == 'file' and self.data_dir is not None:
-            print("file task")
-            self.data = \
-                util.load_words_split_types(self.data_dir, vocab_size=self.top_words, limit=self.limit)
-
-        else:
-            raise Exception('Task {} not recognized.'.format(self.task))
-
-        self.data_train, self.data_valid, self.data_test = self.data["train"], self.data["validation"], self.data["test"]
-        self.x_train, self.w2i_train, self.i2w_train = self.data_train[0], self.data_train[1], self.data_train[2]
-        self.x_valid, self.w2i_valid, self.i2w_valid = self.data_valid[0], self.data_valid[1], self.data_valid[2]
-        self.x_test, self.w2i_test, self.i2w_test = self.data_test[0], self.data_test[1], self.data_test[2]
-        # Finding the length of the longest sequence
-        x_max_len_train = max([len(sentence) for sentence in self.x_train])
-        x_max_len_valid = max([len(sentence) for sentence in self.x_valid])
-        x_max_len_test = max([len(sentence) for sentence in self.x_test])
-
-        numwords_train = len(self.i2w_train)
-        numwords_valid = len(self.i2w_valid)
-        numwords_test = len(self.i2w_test)
-
-        print('max sequence length - train', x_max_len_train)
-        print(numwords_train, 'distinct words - train')
-
-        print('max sequence length - valid', x_max_len_valid)
-        print(numwords_valid, 'distinct words - valid')
-
-        print('max sequence length - test', x_max_len_test)
-        print(numwords_test, 'distinct words - test')
-
-        self.x_train = util.batch_pad(self.x_train, self.batch_size, add_eos=True)
-        self.x_valid = util.batch_pad(self.x_valid, self.batch_size, add_eos=True)
-        self.x_test = util.batch_pad(self.x_test, self.batch_size, add_eos=True)
-
-        print('Finished data loading. ', sum([b.shape[0] for b in self.x_train]), ' training sentences loaded')
-        print('Finished data loading. ', sum([b.shape[0] for b in self.x_valid]), ' validation sentences loaded')
-        print('Finished data loading. ', sum([b.shape[0] for b in self.x_valid]), ' test sentences loaded')
-
-    @staticmethod
-    def get_loss(model, x):
-        loss = 0.0
-        n = 0
-
-        for batch_train in tqdm(x):
-            n_train, l_train = batch_train.shape
-            batch_shifted_train = np.concatenate([np.ones((n_train, 1)), batch_train], axis=1)  # prepend start symbol
-            batch_out_train = np.concatenate([batch_train, np.zeros((n_train, 1))], axis=1)  # append pad symbol
-            loss_train = model.test_on_batch(batch_shifted_train, batch_out_train[:, :, None])
-
-            loss += loss_train
-            n += 1
-        loss = (loss / n)
-        perplexity = LSTM_words.get_perplexity(loss)
-        return loss, perplexity
-
-    @staticmethod
-    def get_perplexity(loss):
-        return math.exp(loss)
-
-    def generate_words(self, size=60, temp=None):
-        if temp is None:
-            temp = self.temperature
-        for i in range(self.check):
-            b = random.choice(self.x_test)
-
-            if b.shape[1] > 20:
-                seed = b[0, :20]
-            else:
-                seed = b[0, :]
-
-            seed = np.insert(seed, 0, 1)
-            gen = words.generate_seq(self.model, seed, size, temperature=temp)
-
-            return '*** [', self.decode_train(seed), '] ', self.decode_train(gen[len(seed):])
-    
-    def set_temperature(self, temp):
-        self.temperature = temp
-
-    def get_temperature(self):
-        return self.temperature
-
-    def set_num_words_to_check(self, num):
-        self.check = num
-
-
-def main():
-    models = []
-    parser = create_parser()
-    options = parser.parse_args()
-    model1 = LSTM_words(task=options.task, top_words=options.top_words, limit=options.limit, seed=options.seed,
-                        batch_size=options.batch, learning_rate=options.lr, lstm_capacity=options.lstm_capacity,
-                        lstm_extra=options.extra, epochs=options.epochs)
-    model1.initialize()
-    # model1.train()
-    models.append(model1)
-    # Show samples for some sentences from random batches
-    # for temp in [0.0, 0.9, 1, 1.1, 1.2]:
-    #     print('### TEMP ', temp)
-    #     model1.generate_words(size=60, temp=temp)
-
-    ## Define model
-    if options.task == 'wikisimple':
+def load_data(task='wikisimple', data_dir=None, limit=None, top_words=1000, batch_size=128):
+    if task == 'wikisimple':
         print("wikisimple task")
         data = \
-            util.load_words_split_types(util.DIR + '/datasets/wikisimple.txt', vocab_size=options.top_words,
-                                        limit=options.limit)
+            util.load_words_split_types(util.DIR + '/datasets/wikisimple.txt', vocab_size=top_words, limit=limit)
 
-    elif options.task == 'file' and options.data_dir is not None:
+    elif task == 'file' and data_dir is not None:
         print("file task")
         data = \
-            util.load_words_split_types(options.data_dir, vocab_size=options.top_words, limit=options.limit)
+            util.load_words_split_types(data_dir, vocab_size=top_words, limit=limit)
 
     else:
-        raise Exception('Task {} not recognized.'.format(options.task))
+        raise Exception('Task {} not recognized.'.format(task))
 
     data_train, data_valid, data_test = data["train"], data["validation"], data["test"]
     x_train, w2i_train, i2w_train = data_train[0], data_train[1], data_train[2]
@@ -395,40 +137,79 @@ def main():
     print('max sequence length - test', x_max_len_test)
     print(numwords_test, 'distinct words - test')
 
-    x_train = util.batch_pad(x_train, options.batch, add_eos=True)
-    x_valid = util.batch_pad(x_valid, options.batch, add_eos=True)
-    x_test = util.batch_pad(x_test, options.batch, add_eos=True)
+    x_train = util.batch_pad(x_train, batch_size, add_eos=True)
+    x_valid = util.batch_pad(x_valid, batch_size, add_eos=True)
+    x_test = util.batch_pad(x_test, batch_size, add_eos=True)
 
+    print('Finished data loading. ', sum([b.shape[0] for b in x_train]), ' training sentences loaded')
+    print('Finished data loading. ', sum([b.shape[0] for b in x_valid]), ' validation sentences loaded')
+    print('Finished data loading. ', sum([b.shape[0] for b in x_valid]), ' test sentences loaded')
+    return [x_train, w2i_train, i2w_train], [x_valid, w2i_valid, i2w_valid], [x_test, w2i_test, i2w_test]
+
+
+def get_sentence_probability(model, sentence):
+        return model.predict(sentence)
+
+def generate_sentences(model, w2i, sentence_beginning="I love", sentence_length = 7,  temperatures=[0.1, 1, 10]):
+    sentence_to_feed, generated_sentences = [], []
+    for word in sentence_beginning.split():
+        sentence_to_feed.append(w2i[word])
+
+    for temperature in temperatures:
+        print(f'Temperature = {temperature}')
+        generated_sentences.append(words.generate_seq(model, sentence_to_feed, size=sentence_length, temperature=temperature))
+
+def decode(seq, i2w):
+    return ' '.join(i2w[id] for id in seq)
+
+def get_perplexity(loss):
+    return math.exp(loss)
+
+def get_new_model(lr, i2w_train, lstm_capacity=1000, extra_layers = None , is_reverse = False):
+    numwords_train = len(i2w_train)
     input_train = Input(shape=(None,))
 
-    embedding_train = Embedding(numwords_train, options.lstm_capacity, input_length=None)
+    embedding_train = Embedding(numwords_train, lstm_capacity, input_length=None)
 
     embedded_train = embedding_train(input_train)
 
-    decoder_lstm_train = LSTM(options.lstm_capacity, return_sequences=True)
+    decoder_lstm_train = LSTM(lstm_capacity, return_sequences=True, go_backwards=is_reverse)
 
     h_train = decoder_lstm_train(embedded_train)
 
-    if options.extra is not None:
-        for _ in range(options.extra):
-            h_train = LSTM(options.extra, return_sequences=True)(h_train)
+    if extra_layers is not None:
+        for _ in range(extra_layers):
+            h_train = LSTM(extra_layers, return_sequences=True, go_backwards=is_reverse)(h_train)
 
     fromhidden_train = Dense(numwords_train, activation='linear')
 
     out_train = TimeDistributed(fromhidden_train)(h_train)
 
     model = Model(input_train, out_train)
-    opt = keras.optimizers.Adam(lr=options.lr)
+    opt = keras.optimizers.Adam(lr=lr)
     lss = words.sparse_loss
     model.compile(opt, lss)
     model.summary()
+    return model
 
+
+def create_models(train_list):
+    models = []
+    for num_hidden in [1, 2]:
+        for is_reverse in [False, True]:
+            model = get_new_model(lr=options.lr, i2w_train = train_list[2], lstm_capacity=options.lstm_capacity, extra_layers=num_hidden,is_reverse=is_reverse)
+            models.append(model)
+            reverse_param_list.append(is_reverse)
+            hidden_layer_param_list.append(num_hidden)
+    return models
+
+
+def train_model(train_list, model, epochs):
     epoch = 0
     instances_seen = 0
-
-    while epoch < options.epochs:
-
-        for batch_train in x_train:
+    while epoch < epochs:
+        print(f'epoch{epoch}')
+        for batch_train in train_list[0]:
             n_train, l_train = batch_train.shape
             batch_shifted_train = np.concatenate([np.ones((n_train, 1)), batch_train],
                                                  axis=1)  # prepend start symbol
@@ -438,6 +219,59 @@ def main():
 
             instances_seen += n_train
         epoch += 1
+    return model
+
+
+def get_loss(model, x):
+    loss = 0.0
+    n = 0
+
+    for batch_train in tqdm(x):
+        n_train, l_train = batch_train.shape
+        batch_shifted_train = np.concatenate([np.ones((n_train, 1)), batch_train], axis=1)  # prepend start symbol
+        batch_out_train = np.concatenate([batch_train, np.zeros((n_train, 1))], axis=1)  # append pad symbol
+        loss_train = model.test_on_batch(batch_shifted_train, batch_out_train[:, :, None])
+
+        loss += loss_train
+        n += 1
+    loss = (loss / n)
+    perplexity = get_perplexity(loss)
+    return loss, perplexity
+
+
+def train_all_models_and_print_loss_perplexity(models, train_list, valid_list, test_list):
+    trained_models = []
+    for index, model in tqdm(enumerate(models), total=len(models)):
+        print(f'')
+        model = train_model(train_list, model, options.epochs)
+        trained_models.append(model)
+        loss_train, perplexity_train = get_loss(model, train_list[0])
+        loss_valid, perplexity_valid = get_loss(model, valid_list[0])
+        loss_test, perplexity_test = get_loss(model, test_list[0])
+        print(f'number epochs = {options.epochs}, reverse_lstm = {reverse_param_list[index]}, hidden_layers = {hidden_layer_param_list[index]}')
+        print(f'Train - Loss = {loss_train}, Perplexity = {perplexity_train}')
+        print(f'Valid - Loss = {loss_valid}, Perplexity = {perplexity_valid}')
+        print(f'Test - Loss = {loss_test}, Perplexity = {perplexity_test}')
+    return trained_models
+
+# TODO global other params
+
+def main():
+    global options
+    parser = create_parser()
+    options = parser.parse_args()
+    logging.debug("options parsing performed")
+    print(options)
+    train_list, validation_list, test_list = load_data(task=options.task, data_dir=options.data,limit=options.limit, top_words=options.top_words, batch_size=options.batch)
+    logging.debug("load_data performed")
+    # train_list = [x_train, w2i_train, i2w_train], validation_list = [x_valid, w2i_valid, i2w_valid] test_list = [x_test, w2i_test, i2w_test]
+    models = create_models(train_list)
+    logging.debug("create_models performed")
+    models = train_all_models_and_print_loss_perplexity(models, train_list, validation_list, test_list)
+    generate_sentences(models[0], w2i=train_list[1])
+    # def generate_sentences(model, w2i, sentence_beginning="I love", sentence_length=7, temperatures=[0.1, 1, 10]):
+
+
 
 if __name__ == "__main__":
     main()
