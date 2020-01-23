@@ -112,19 +112,21 @@ def create_gui():
                 window['probability_key'].update(text)
         if event in (None, create_model_text):
             print("creating model...")
-            window['INPUT'].update('Please wait...creating model', visible=True)
+
             rev = values['reverse_key']
             num_layer = values['num_layers_key']
             dataset_name = values['dataset_key']
             epochs = values['epoch_slider']
+            for x in generation_group:
+                window[x].update(visible=True)
+            window['INPUT'].update('Please wait...creating model', visible=True)
+            window.read()
             create_new_model_with_parameters(is_reverse=rev, num_hidden_layers=num_layer, dataset_name=dataset_name,
                                              num_epochs=epochs)
             text = ""
             for x, name in zip([train_list[0], valid_list[0], test_list[0]], ["Training", "Validation", "Testing"]):
                 loss, perp = get_loss(model, x)
                 text += f'{name} dataset loss = {loss}, perplexity = {perp}\n'
-            for x in generation_group:
-                window[x].update(visible=True)
 
             window['loss_perp_key'].update(text)
             window['INPUT'].update('Enter seed words here')
