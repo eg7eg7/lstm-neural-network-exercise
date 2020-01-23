@@ -299,25 +299,24 @@ def main():
     sentence1 = util.EXTRA_SYMBOLS[1] + " I love"
     sentence2 = util.EXTRA_SYMBOLS[1] + " I love cupcakes"
     probability_sentences = [sentence1, sentence2]
-    for epoch in range(options.epochs):
-        models = train_all_models_and_print_loss_perplexity(models, train_list, validation_list, test_list)
-        for index, model in enumerate(models):
-            for temperature in [0.1, 1, 10]:
-                # requirement #5 + #9
-                for probability_sentence in probability_sentences:
-                    encoded_seq = encode(probability_sentence, train_list[1])
-                    float_probability, exp_probability = get_probability(model, np.array(encoded_seq), temperature)
-                    log.info(
-                        f'For sentence {probability_sentence} float probability = {float_probability}, exponential probability = {exp_probability}')
-
-                # requirement  # 6
-                size = 7
-                w2i, i2w = train_list[1], train_list[2]
-                generated_sentence = generate_sentence(model=model, sentence=sentence1, w2i=w2i, i2w=i2w, size=size,
-                                                       temperature=temperature)
+    models = train_all_models_and_print_loss_perplexity(models, train_list, validation_list, test_list)
+    for index, model in enumerate(models):
+        for temperature in [0.1, 1, 10]:
+            # requirement #5 + #9
+            for probability_sentence in probability_sentences:
+                encoded_seq = encode(probability_sentence, train_list[1])
+                float_probability, exp_probability = get_probability(model, np.array(encoded_seq), temperature)
                 log.info(
-                    f'generated sentence for model #{index} with next parameters,beginning sentence = {sentence1}, size = {size}, temperature = {temperature}')
-                print('*** [', sentence1, '] ', generated_sentence)
+                    f'For sentence {probability_sentence} float probability = {float_probability}, exponential probability = {exp_probability}')
+
+            # requirement  # 6
+            size = 7
+            w2i, i2w = train_list[1], train_list[2]
+            generated_sentence = generate_sentence(model=model, sentence=sentence1, w2i=w2i, i2w=i2w, size=size,
+                                                   temperature=temperature)
+            log.info(
+                f'generated sentence for model #{index} with next parameters,beginning sentence = {sentence1}, size = {size}, temperature = {temperature}')
+            print('*** [', sentence1, '] ', generated_sentence)
 
 
 if __name__ == "__main__":
