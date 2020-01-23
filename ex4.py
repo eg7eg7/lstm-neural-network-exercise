@@ -1,18 +1,26 @@
-import logging
 import math
-from argparse import ArgumentParser
 import os
+from argparse import ArgumentParser
+
+import coloredlogs
 import keras
+import logging
 import numpy as np
 from keras.layers import LSTM, Embedding, TimeDistributed, Input, Dense
 from keras.models import Model
+from scipy.special import logsumexp
 from tqdm import tqdm
+
 import util
 import words
 
 #  Eden Dupont 204808596
 #  Daniil Rolnik 334018009
-# TODO refactor (ctrl+alt+shift+L)
+
+'''
+All none GUI requirements are met here
+All needed imports may be found in env.txt file
+'''
 
 CHECK = 6
 options = None
@@ -21,11 +29,14 @@ model_list = []
 reverse_param_list = []
 hidden_layer_param_list = []
 window = None
+coloredlogs.install()
 log = logging.getLogger(__name__)
+logging.basicConfig(level=os.environ.get("LOGLEVEL", "INFO"))
+log.setLevel(logging.INFO)
 
 
 def create_parser():
-    ## Parse the command line options
+    # Parse the command line options
     parser = ArgumentParser()
 
     parser.add_argument("-e", "--epochs",
@@ -101,16 +112,17 @@ def create_parser():
 
 
 def load_data(task='wikisimple', data_dir=None, limit=None, top_words=1000, batch_size=128):
-    if task == 'wikisimple':
-        print("wikisimple task")
-        data = \
-            util.load_words_split_types(util.DIR + '/datasets/wikisimple.txt', vocab_size=top_words, limit=limit)
-
-    elif task == 'file' and data_dir is not None:
-        print("file task")
-        data = \
-            util.load_words_split_types(data_dir, vocab_size=top_words, limit=limit)
-
+    dataset_dict = {'wikisimple': '/datasets/wikisimple.txt',
+                    'europarl.100': '/datasets/europarl.100.txt',
+                    'coco': '/datasets/coco.valannotations.txt',
+                    'europarl.50': '/datasets/europarl.50.txt',
+                    'europarl.40': '/datasets/europarl.40.txt',
+                    'shakespeare': '/datasets/shakespeare.txt',
+                    'alice': '/datasets/alice.txt'
+                    }
+    directory = dataset_dict[task]
+    if dir is not None:
+        data = util.load_words_split_types(util.DIR + directory, vocab_size=top_words, limit=limit)
     else:
         raise Exception('Task {} not recognized.'.format(task))
 
@@ -129,8 +141,20 @@ def load_data(task='wikisimple', data_dir=None, limit=None, top_words=1000, batc
     return [x_train, w2i_train, i2w_train], [x_valid, w2i_valid, i2w_valid], [x_test, w2i_test, i2w_test]
 
 
-def get_sentence_probability(model, sentence):
-    return model.predict(sentence)
+def get_probability(model, seed, temp):
+    exp_total_prob = 1
+    ls = seed.shape[0]
+    probs = model.predict(seed[None, :])
+    for i in range(1, ls):
+        l_probs = probs[0, i - 1, :]
+        l_probs = l_probs / temp
+        l_probs = l_probs - logsumexp(l_probs)
+        l_probs = np.exp(l_probs)
+        cur_prob = l_probs[seed[i]]
+        exp_total_prob *= cur_prob
+    total_prob_str = format(exp_total_prob, '.20f')
+    float_total_prob = total_prob_str.replace(',', '.')
+    return float_total_prob, exp_total_prob
 
 
 def generate_sentence(model, sentence, w2i, i2w, size, temperature):
@@ -147,7 +171,6 @@ def decode(seq, i2w):
 def encode(seq, w2i):
     encoded_seq = []
     seq = seq.split()
-    encoded_seq.append(w2i[util.EXTRA_SYMBOLS[1]])  # util.EXTRA_SYMBOLS[1] = <START> Start Tag
     for word in seq:
         if word in w2i:
             encoded_seq.append(w2i[word])
@@ -186,6 +209,7 @@ def get_new_model(lr, i2w_train, lstm_capacity=1000, extra_layers=None, is_rever
     model.compile(opt, lss)
     model.summary()
     return model
+
 
 #### create 4 LSTM neural networks with 1 or 2 hidden layers and reverse=True or reverse = False
 def create_models(train_list):
@@ -238,35 +262,24 @@ def get_loss(model, x):
 
 def train_all_models_and_print_loss_perplexity(models, train_list, valid_list, test_list):
     trained_models = []
-    probability_sentence = "random sentence"
+    num_epochs = options.epochs
     for index, model in tqdm(enumerate(models), total=len(models), position=0):
-        model = train_model(train_list, model, 1)
+        model = train_model(train_list, model, epochs=num_epochs)
         trained_models.append(model)
         log.info(f'\nmodel#{index}:')
         log.info(
-            f'number epochs = {options.epochs}, reverse_lstm = {reverse_param_list[index]}, hidden_layers = {hidden_layer_param_list[index]}')
+            f'number epochs = {num_epochs}, reverse_lstm = {reverse_param_list[index]}, hidden_layers = {hidden_layer_param_list[index]}')
 
         for data, title in zip([train_list[0], valid_list[0], test_list[0]], ['Train', 'Validation', 'Test']):
             log.info(f'Calculating loss and perplexity for {title}')
             loss, perplexity = get_loss(model, data)
             log.info(f'{title} - Loss = {loss}, Perplexity = {perplexity}')
 
-        # requirement #5
-        # TODO fix probability
-        encoded_seq = encode(probability_sentence, train_list[1])
-        prob = get_sentence_probability(model, np.array(encoded_seq))
-        log.info(f'Probability for the sentence in the model is : {prob}')
         break
-        # TODO remove break
     return trained_models
 
 
-# TODO global other params
-
-
 def main():
-    logging.basicConfig(level=os.environ.get("LOGLEVEL", "INFO"))
-    log.setLevel(logging.INFO)
     global options
     parser = create_parser()
     options = parser.parse_args()
@@ -275,26 +288,36 @@ def main():
     train_list, validation_list, test_list = load_data(task=options.task, data_dir=options.data, limit=options.limit,
                                                        top_words=options.top_words, batch_size=options.batch)
     log.info("load_data performed")
-    #  train_list = [x_train, w2i_train, i2w_train], validation_list = [x_valid, w2i_valid, i2w_valid] test_list = [x_test, w2i_test, i2w_test]
+    #  train_list = [data, w2i, i2w]
 
     #  requirement #4
     models = create_models(train_list)
     log.info("create_models performed")
 
-    #  requirement #6 + #8
-    sentence = "I love"
+    # requirement #8 - #9
+    sentence1 = util.EXTRA_SYMBOLS[1] + " I love"
+    sentence2 = util.EXTRA_SYMBOLS[1] + " I love cupcakes"
+    probability_sentences = [sentence1, sentence2]
     for epoch in range(options.epochs):
         models = train_all_models_and_print_loss_perplexity(models, train_list, validation_list, test_list)
         for index, model in enumerate(models):
             for temperature in [0.1, 1, 10]:
+                # requirement #5
+                for probability_sentence in probability_sentences:
+                    encoded_seq = encode(probability_sentence, train_list[1])
+                    float_probability, exp_probability = get_probability(model, np.array(encoded_seq), temperature)
+                    log.info(
+                        f'For sentence {probability_sentence} float probability = {float_probability}, exponential probability = {exp_probability}')
+
+                # requirement  # 6
                 size = 7
                 w2i, i2w = train_list[1], train_list[2]
-                generated_sentence = generate_sentence(model=model, sentence=sentence, w2i=w2i, i2w=i2w, size=size, temperature=temperature)
-                log.info(f'generating sentence for model #{index} with next parameters,beginning sentence = {sentence}, size = {size}, temperature = {temperature}')
-                print('*** [', sentence, '] ', generated_sentence)
+                generated_sentence = generate_sentence(model=model, sentence=sentence1, w2i=w2i, i2w=i2w, size=size,
+                                                       temperature=temperature)
+                log.info(
+                    f'generated sentence for model #{index} with next parameters,beginning sentence = {sentence1}, size = {size}, temperature = {temperature}')
+                print('*** [', sentence1, '] ', generated_sentence)
 
 
 if __name__ == "__main__":
     main()
-
-#  TODO remove useless comments

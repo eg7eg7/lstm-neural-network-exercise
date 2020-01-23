@@ -33,7 +33,7 @@ def generate_seq(model: Model, seed, size, temperature=1.0):
         highest probability is always chosen.
     :return: A list of integers representing a samples sentence
     """
-    logging.debug("started to generate sequence with beginning of the sentance")
+    logging.debug("started to generate sequence with beginning of the sentence")
     ls = seed.shape[0]
 
     # Due to the way Keras RNNs work, we feed the model a complete sequence each time. At first it's just the seed,
