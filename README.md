@@ -13,3 +13,12 @@ $pip install -r env.txt
 Install Cuda 9.0 with Cudnn
 
 Open the workspace with the lstm environment
+
+
+To run without gui:
+
+$ python ex4.py --epochs 2 --extra-layers 2
+
+To run with gui:
+
+$ python ex4_gui.py
