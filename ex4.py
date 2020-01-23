@@ -275,8 +275,6 @@ def train_all_models_and_print_loss_perplexity(models, train_list, valid_list, t
             log.info(f'Calculating loss and perplexity for {title}')
             loss, perplexity = get_loss(model, data)
             log.info(f'{title} - Loss = {loss}, Perplexity = {perplexity}')
-
-        break
     return trained_models
 
 
