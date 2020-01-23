@@ -79,7 +79,7 @@ def create_parser():
     parser.add_argument("-w", "--top_words",
                         dest="top_words",
                         help="Top words",
-                        default=10000, type=int)
+                        default=100000, type=int)
 
     parser.add_argument("-I", "--limit",
                         dest="limit",
@@ -130,15 +130,6 @@ def load_data(task='wikisimple', data_dir=None, limit=None, top_words=1000, batc
     numwords_valid = len(i2w_valid)
     numwords_test = len(i2w_test)
 
-    print('max sequence length - train', x_max_len_train)
-    print(numwords_train, 'distinct words - train')
-
-    print('max sequence length - valid', x_max_len_valid)
-    print(numwords_valid, 'distinct words - valid')
-
-    print('max sequence length - test', x_max_len_test)
-    print(numwords_test, 'distinct words - test')
-
     x_train = util.batch_pad(x_train, batch_size, add_eos=True)
     x_valid = util.batch_pad(x_valid, batch_size, add_eos=True)
     x_test = util.batch_pad(x_test, batch_size, add_eos=True)
@@ -169,7 +160,16 @@ def decode(seq, i2w):
 
 
 def encode(seq, w2i):
-    return [w2i[word] for word in seq]
+    encoded_seq = []
+    seq = seq.split()
+    encoded_seq.append(w2i[util.EXTRA_SYMBOLS[1]])  # util.EXTRA_SYMBOLS[1] = <START> Start Tag
+    for word in seq:
+        if word in w2i:
+            encoded_seq.append(w2i[word])
+        else:
+            encoded_seq.append(w2i[util.EXTRA_SYMBOLS[2]])  # util.EXTRA_SYMBOLS[2] = <UNK> Unknown Tag
+    return encoded_seq
+    # return [w2i[word] for word in seq]
 
 
 def get_perplexity(loss):
@@ -282,17 +282,18 @@ def main():
     train_list, validation_list, test_list = load_data(task=options.task, data_dir=options.data, limit=options.limit,
                                                        top_words=options.top_words, batch_size=options.batch)
     logging.debug("load_data performed")
-    print(f'train_list:\n{train_list}')
     # train_list = [x_train, w2i_train, i2w_train], validation_list = [x_valid, w2i_valid, i2w_valid] test_list = [x_test, w2i_test, i2w_test]
     models = create_models(train_list)
 
     logging.debug("create_models performed")
     for epoch in range(options.epochs):
         models = train_all_models_and_print_loss_perplexity(models, train_list, validation_list, test_list)
-        encoded_seq = encode(["book", "of", "changes"], train_list[1])
-        generated_seq = words.generate_seq(model=models[0], seed=np.array(encoded_seq), size=7, temperature=1.0)
-        generated_seq = decode(generated_seq, train_list[2])
-        print(f'generated_seq decoded string = "{generated_seq}"')
+        sentence = "I love"
+        encoded_seq = encode(sentence, train_list[1])
+        generated_tokens = words.generate_seq(model=models[0], seed=np.array(encoded_seq), size=7, temperature=1.0)
+        generated_seq = decode(generated_tokens, train_list[2])
+        # print(f'generated_seq decoded string = "{generated_seq}"')
+        print('*** [', sentence, '] ', generated_seq)
         # generate_sentences(models[0], w2i=train_list[1])
         # def generate_sentences(model, w2i, sentence_beginning="I love", sentence_length=7, temperatures=[0.1, 1, 10]):
 
