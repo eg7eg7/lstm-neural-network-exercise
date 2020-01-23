@@ -1,22 +1,17 @@
-import keras
-
-import keras.backend as K
-from keras.datasets import imdb
-from keras.layers import LSTM, Embedding, TimeDistributed, Input, Dense
-from keras.models import Model, load_model
 import logging
-from tensorflow.python.client import device_lib
-
-from tqdm import tqdm
-import os, random
-from argparse import ArgumentParser, Namespace
-import numpy as np
-
-from tensorboardX import SummaryWriter
 import math
+from argparse import ArgumentParser
+import os
+import keras
+import numpy as np
+from keras.layers import LSTM, Embedding, TimeDistributed, Input, Dense
+from keras.models import Model
+from tqdm import tqdm
 import util
 import words
 
+#  Eden Dupont 204808596
+#  Daniil Rolnik 334018009
 # TODO refactor (ctrl+alt+shift+L)
 
 CHECK = 6
@@ -25,6 +20,8 @@ options = None
 model_list = []
 reverse_param_list = []
 hidden_layer_param_list = []
+window = None
+log = logging.getLogger(__name__)
 
 
 def create_parser():
@@ -121,14 +118,6 @@ def load_data(task='wikisimple', data_dir=None, limit=None, top_words=1000, batc
     x_train, w2i_train, i2w_train = data_train[0], data_train[1], data_train[2]
     x_valid, w2i_valid, i2w_valid = data_valid[0], data_valid[1], data_valid[2]
     x_test, w2i_test, i2w_test = data_test[0], data_test[1], data_test[2]
-    # Finding the length of the longest sequence
-    x_max_len_train = max([len(sentence) for sentence in x_train])
-    x_max_len_valid = max([len(sentence) for sentence in x_valid])
-    x_max_len_test = max([len(sentence) for sentence in x_test])
-
-    numwords_train = len(i2w_train)
-    numwords_valid = len(i2w_valid)
-    numwords_test = len(i2w_test)
 
     x_train = util.batch_pad(x_train, batch_size, add_eos=True)
     x_valid = util.batch_pad(x_valid, batch_size, add_eos=True)
@@ -144,19 +133,15 @@ def get_sentence_probability(model, sentence):
     return model.predict(sentence)
 
 
-def generate_sentences(model, w2i, sentence_beginning="I love", sentence_length=7, temperatures=[0.1, 1, 10]):
-    sentence_to_feed, generated_sentences = [], []
-    for word in sentence_beginning.split():
-        sentence_to_feed.append(w2i[word])
-
-    for temperature in temperatures:
-        print(f'Temperature = {temperature}')
-        generated_sentences.append(
-            words.generate_seq(model, sentence_to_feed, size=sentence_length, temperature=temperature))
+def generate_sentence(model, sentence, w2i, i2w, size, temperature):
+    encoded_seq = encode(sentence, w2i)
+    generated_tokens = words.generate_seq(model=model, seed=np.array(encoded_seq), size=size, temperature=temperature)
+    generated_seq = decode(generated_tokens, i2w)
+    return generated_seq
 
 
 def decode(seq, i2w):
-    return ' '.join(i2w[id] for id in seq)
+    return ' '.join(i2w[word_id] for word_id in seq)
 
 
 def encode(seq, w2i):
@@ -169,7 +154,6 @@ def encode(seq, w2i):
         else:
             encoded_seq.append(w2i[util.EXTRA_SYMBOLS[2]])  # util.EXTRA_SYMBOLS[2] = <UNK> Unknown Tag
     return encoded_seq
-    # return [w2i[word] for word in seq]
 
 
 def get_perplexity(loss):
@@ -203,7 +187,7 @@ def get_new_model(lr, i2w_train, lstm_capacity=1000, extra_layers=None, is_rever
     model.summary()
     return model
 
-
+#### create 4 LSTM neural networks with 1 or 2 hidden layers and reverse=True or reverse = False
 def create_models(train_list):
     models = []
     for num_hidden in [1, 2]:
@@ -220,8 +204,9 @@ def train_model(train_list, model, epochs):
     epoch = 0
     instances_seen = 0
     while epoch < epochs:
-        print(f'epoch#{epoch} out of {epochs}')
-        for batch_train in train_list[0]:
+        log.info(f'epoch #{epoch} out of {epochs}')
+        log.info(f'Training model in batches..')
+        for batch_train in tqdm(train_list[0], position=0):
             n_train, l_train = batch_train.shape
             batch_shifted_train = np.concatenate([np.ones((n_train, 1)), batch_train],
                                                  axis=1)  # prepend start symbol
@@ -253,19 +238,24 @@ def get_loss(model, x):
 
 def train_all_models_and_print_loss_perplexity(models, train_list, valid_list, test_list):
     trained_models = []
+    probability_sentence = "random sentence"
     for index, model in tqdm(enumerate(models), total=len(models), position=0):
-        print(f'')
         model = train_model(train_list, model, 1)
         trained_models.append(model)
-        loss_train, perplexity_train = get_loss(model, train_list[0])
-        loss_valid, perplexity_valid = get_loss(model, valid_list[0])
-        loss_test, perplexity_test = get_loss(model, test_list[0])
+        log.info(f'\nmodel#{index}:')
+        log.info(
+            f'number epochs = {options.epochs}, reverse_lstm = {reverse_param_list[index]}, hidden_layers = {hidden_layer_param_list[index]}')
 
-        print(f'\nmodel#{index}:')
-        print(f'number epochs = {options.epochs}, reverse_lstm = {reverse_param_list[index]}, hidden_layers = {hidden_layer_param_list[index]}')
-        print(f'Train - Loss = {loss_train}, Perplexity = {perplexity_train}')
-        print(f'Valid - Loss = {loss_valid}, Perplexity = {perplexity_valid}')
-        print(f'Test - Loss = {loss_test}, Perplexity = {perplexity_test}')
+        for data, title in zip([train_list[0], valid_list[0], test_list[0]], ['Train', 'Validation', 'Test']):
+            log.info(f'Calculating loss and perplexity for {title}')
+            loss, perplexity = get_loss(model, data)
+            log.info(f'{title} - Loss = {loss}, Perplexity = {perplexity}')
+
+        # requirement #5
+        # TODO fix probability
+        encoded_seq = encode(probability_sentence, train_list[1])
+        prob = get_sentence_probability(model, np.array(encoded_seq))
+        log.info(f'Probability for the sentence in the model is : {prob}')
         break
         # TODO remove break
     return trained_models
@@ -273,30 +263,38 @@ def train_all_models_and_print_loss_perplexity(models, train_list, valid_list, t
 
 # TODO global other params
 
+
 def main():
+    logging.basicConfig(level=os.environ.get("LOGLEVEL", "INFO"))
+    log.setLevel(logging.INFO)
     global options
     parser = create_parser()
     options = parser.parse_args()
-    logging.debug("options parsing performed")
-    print(options)
+    log.info("options parsing performed")
+    log.info(options)
     train_list, validation_list, test_list = load_data(task=options.task, data_dir=options.data, limit=options.limit,
                                                        top_words=options.top_words, batch_size=options.batch)
-    logging.debug("load_data performed")
-    # train_list = [x_train, w2i_train, i2w_train], validation_list = [x_valid, w2i_valid, i2w_valid] test_list = [x_test, w2i_test, i2w_test]
-    models = create_models(train_list)
+    log.info("load_data performed")
+    #  train_list = [x_train, w2i_train, i2w_train], validation_list = [x_valid, w2i_valid, i2w_valid] test_list = [x_test, w2i_test, i2w_test]
 
-    logging.debug("create_models performed")
+    #  requirement #4
+    models = create_models(train_list)
+    log.info("create_models performed")
+
+    #  requirement #6 + #8
+    sentence = "I love"
     for epoch in range(options.epochs):
         models = train_all_models_and_print_loss_perplexity(models, train_list, validation_list, test_list)
-        sentence = "I love"
-        encoded_seq = encode(sentence, train_list[1])
-        generated_tokens = words.generate_seq(model=models[0], seed=np.array(encoded_seq), size=7, temperature=1.0)
-        generated_seq = decode(generated_tokens, train_list[2])
-        # print(f'generated_seq decoded string = "{generated_seq}"')
-        print('*** [', sentence, '] ', generated_seq)
-        # generate_sentences(models[0], w2i=train_list[1])
-        # def generate_sentences(model, w2i, sentence_beginning="I love", sentence_length=7, temperatures=[0.1, 1, 10]):
+        for index, model in enumerate(models):
+            for temperature in [0.1, 1, 10]:
+                size = 7
+                w2i, i2w = train_list[1], train_list[2]
+                generated_sentence = generate_sentence(model=model, sentence=sentence, w2i=w2i, i2w=i2w, size=size, temperature=temperature)
+                log.info(f'generating sentence for model #{index} with next parameters,beginning sentence = {sentence}, size = {size}, temperature = {temperature}')
+                print('*** [', sentence, '] ', generated_sentence)
 
 
 if __name__ == "__main__":
     main()
+
+#  TODO remove useless comments

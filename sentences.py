@@ -81,6 +81,7 @@ def generate_seq(
 
     return result
 
+
 def sparse_loss(y_true, y_pred):
     losses = K.sparse_categorical_crossentropy(y_true, y_pred, from_logits=True)
     return K.sum(losses, axis=-1) # Note the sum over timesteps. This is crucial for the VAE
@@ -145,7 +146,6 @@ def go(options):
         print(numwords, 'distinct words')
 
         x = util.batch_pad(x, options.batch, add_eos=True)
-
 
     elif options.task == 'file':
 
