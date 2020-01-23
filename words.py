@@ -7,6 +7,7 @@ from keras.models import Model
 from tensorflow.python.client import device_lib
 
 from tqdm import tqdm
+import logging
 import os, random
 
 from argparse import ArgumentParser
@@ -32,7 +33,7 @@ def generate_seq(model: Model, seed, size, temperature=1.0):
         highest probability is always chosen.
     :return: A list of integers representing a samples sentence
     """
-
+    logging.debug("started to generate sequence with beginning of the sentance")
     ls = seed.shape[0]
 
     # Due to the way Keras RNNs work, we feed the model a complete sequence each time. At first it's just the seed,
@@ -48,7 +49,10 @@ def generate_seq(model: Model, seed, size, temperature=1.0):
 
         tokens[i] = next_token
 
-    return [int(t) for t in tokens]
+    result = [int(t) for t in tokens]
+    logging.debug(f'generate_seq output {result}')
+    return result
+    # return [int(t) for t in tokens]
 
 
 def sparse_loss(y_true, y_pred):

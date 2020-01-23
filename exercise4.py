@@ -164,25 +164,12 @@ def generate_sentences(model, w2i, sentence_beginning="I love", sentence_length=
             words.generate_seq(model, sentence_to_feed, size=sentence_length, temperature=temperature))
 
 
-def generate_words(size=60, temp=None, initial_sentence="I love"):
-    if temp is None:
-        temp = 1.0
-    for i in range(CHECK):
-        b = random.choice(x_test)
-
-        if b.shape[1] > 20:
-            seed = b[0, :20]
-        else:
-            seed = b[0, :]
-
-        seed = np.insert(seed, 0, 1)
-        gen = words.generate_seq(self.model, seed, size, temperature=temp)
-
-        return '*** [', decode_train(seed), '] ', decode_train(gen[len(seed):])
-
-
 def decode(seq, i2w):
     return ' '.join(i2w[id] for id in seq)
+
+
+def encode(seq, w2i):
+    return [w2i[word] for word in seq]
 
 
 def get_perplexity(loss):
@@ -233,7 +220,7 @@ def train_model(train_list, model, epochs):
     epoch = 0
     instances_seen = 0
     while epoch < epochs:
-        print(f'epoch{epoch}')
+        print(f'epoch#{epoch} out of {epochs}')
         for batch_train in train_list[0]:
             n_train, l_train = batch_train.shape
             batch_shifted_train = np.concatenate([np.ones((n_train, 1)), batch_train],
@@ -274,8 +261,8 @@ def train_all_models_and_print_loss_perplexity(models, train_list, valid_list, t
         loss_valid, perplexity_valid = get_loss(model, valid_list[0])
         loss_test, perplexity_test = get_loss(model, test_list[0])
 
-        print(
-            f'number epochs = {options.epochs}, reverse_lstm = {reverse_param_list[index]}, hidden_layers = {hidden_layer_param_list[index]}')
+        print(f'\nmodel#{index}:')
+        print(f'number epochs = {options.epochs}, reverse_lstm = {reverse_param_list[index]}, hidden_layers = {hidden_layer_param_list[index]}')
         print(f'Train - Loss = {loss_train}, Perplexity = {perplexity_train}')
         print(f'Valid - Loss = {loss_valid}, Perplexity = {perplexity_valid}')
         print(f'Test - Loss = {loss_test}, Perplexity = {perplexity_test}')
@@ -295,12 +282,17 @@ def main():
     train_list, validation_list, test_list = load_data(task=options.task, data_dir=options.data, limit=options.limit,
                                                        top_words=options.top_words, batch_size=options.batch)
     logging.debug("load_data performed")
+    print(f'train_list:\n{train_list}')
     # train_list = [x_train, w2i_train, i2w_train], validation_list = [x_valid, w2i_valid, i2w_valid] test_list = [x_test, w2i_test, i2w_test]
     models = create_models(train_list)
+
     logging.debug("create_models performed")
     for epoch in range(options.epochs):
         models = train_all_models_and_print_loss_perplexity(models, train_list, validation_list, test_list)
-        words.generate_seq(model=models[0], seed=["I love you"], size=7, temperature=1.0)
+        encoded_seq = encode(["book", "of", "changes"], train_list[1])
+        generated_seq = words.generate_seq(model=models[0], seed=np.array(encoded_seq), size=7, temperature=1.0)
+        generated_seq = decode(generated_seq, train_list[2])
+        print(f'generated_seq decoded string = "{generated_seq}"')
         # generate_sentences(models[0], w2i=train_list[1])
         # def generate_sentences(model, w2i, sentence_beginning="I love", sentence_length=7, temperatures=[0.1, 1, 10]):
 
