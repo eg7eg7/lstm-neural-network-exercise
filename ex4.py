@@ -212,6 +212,7 @@ def get_new_model(lr, i2w_train, lstm_capacity=1000, extra_layers=None, is_rever
 
 
 #### create 4 LSTM neural networks with 1 or 2 hidden layers and reverse=True or reverse = False
+# requirement #8
 def create_models(train_list):
     models = []
     for num_hidden in [1, 2]:
@@ -294,7 +295,7 @@ def main():
     models = create_models(train_list)
     log.info("create_models performed")
 
-    # requirement #8 - #9
+    # requirement #5, 6, 9
     sentence1 = util.EXTRA_SYMBOLS[1] + " I love"
     sentence2 = util.EXTRA_SYMBOLS[1] + " I love cupcakes"
     probability_sentences = [sentence1, sentence2]
@@ -302,7 +303,7 @@ def main():
         models = train_all_models_and_print_loss_perplexity(models, train_list, validation_list, test_list)
         for index, model in enumerate(models):
             for temperature in [0.1, 1, 10]:
-                # requirement #5
+                # requirement #5 + #9
                 for probability_sentence in probability_sentences:
                     encoded_seq = encode(probability_sentence, train_list[1])
                     float_probability, exp_probability = get_probability(model, np.array(encoded_seq), temperature)
