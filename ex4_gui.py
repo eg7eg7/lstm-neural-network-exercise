@@ -81,7 +81,7 @@ def create_gui():
               [sg.Multiline(default_text='Press "Generate" to view the sentence', size=(60, 5), key='OUTPUT',
                             visible=False)],
               [sg.Text('Temperature:', key='temp_slider_text', visible=False)],
-              [sg.Slider(range=(0.1, 20), orientation='h', size=(34, 20), default_value=1.0, resolution=.1,
+              [sg.Slider(range=(0.001, 20), orientation='h', size=(34, 20), default_value=1.0, resolution=.00001,
                          key='temp_slider', visible=False)],
               [sg.Text('sentence size to generate:', visible=False, key='size_choose_key')],
               [sg.InputText(default_text='10', key='-IN-SIZE-', visible=False)],
@@ -120,7 +120,7 @@ def create_gui():
             for x in generation_group:
                 window['INPUT'].update('Please wait...creating model', visible=True)
                 window[x].update(visible=True)
-            
+
             create_new_model_with_parameters(is_reverse=rev, num_hidden_layers=num_layer, dataset_name=dataset_name,
                                              num_epochs=epochs)
             text = ""
