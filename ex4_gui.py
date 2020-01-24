@@ -118,9 +118,9 @@ def create_gui():
             dataset_name = values['dataset_key']
             epochs = values['epoch_slider']
             for x in generation_group:
+                window['INPUT'].update('Please wait...creating model', visible=True)
                 window[x].update(visible=True)
-            window['INPUT'].update('Please wait...creating model', visible=True)
-            window.read()
+            
             create_new_model_with_parameters(is_reverse=rev, num_hidden_layers=num_layer, dataset_name=dataset_name,
                                              num_epochs=epochs)
             text = ""
